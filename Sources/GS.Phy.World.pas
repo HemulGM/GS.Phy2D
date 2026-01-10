@@ -28,6 +28,11 @@ unit GS.Phy.World;
 {$MODE DELPHI}
 {$ENDIF}
 
+// Optimisations de compilation
+{$O+}  // Optimisations activees
+{$R-}  // Range checking desactive
+{$Q-}  // Overflow checking desactive
+
 interface
 
 uses
@@ -313,7 +318,7 @@ end;
 procedure TPhyWorld.CollideParticlesPtr(P1, P2: PPhyParticle);
 var
   Delta: TVec2;
-  DistSq, Dist, MinDist, Overlap: Single;
+  DistSq, Dist, MinDist, Overlap, InvDist: Single;
   Normal, Correction: TVec2;
   TotalInvMass, Ratio1, Ratio2: Single;
   RelVel, VelAlongNormal: Single;
@@ -335,9 +340,11 @@ begin
     DistSq := Vec2LengthSq(Delta);
   end;
 
-  Dist := Sqrt(DistSq);
+  // Utiliser FastInvSqrt au lieu de Sqrt + division
+  InvDist := FastInvSqrt(DistSq);
+  Dist := DistSq * InvDist;  // dist = distSq * (1/sqrt(distSq)) = sqrt(distSq)
   Overlap := MinDist - Dist;
-  Normal := Vec2Mul(Delta, 1.0 / Dist);
+  Normal := Vec2Mul(Delta, InvDist);
 
   // Correction proportionnelle aux masses inverses
   TotalInvMass := P1^.InvMass + P2^.InvMass;
@@ -381,7 +388,7 @@ var
   C: PPhyConstraint;
   P1, P2: PPhyParticle;
   Delta: TVec2;
-  Dist, Diff: Single;
+  DistSq, InvDist, Dist, Diff: Single;
   Correction: TVec2;
   TotalInvMass, Ratio1, Ratio2: Single;
 begin
@@ -392,12 +399,16 @@ begin
     P2 := @FParticles[C^.P2];
 
     Delta := Vec2Sub(P2^.Pos, P1^.Pos);
-    Dist := Vec2Length(Delta);
+    DistSq := Vec2LengthSq(Delta);
 
-    if Dist < 0.0001 then
+    if DistSq < 0.0001 then
       Continue;
 
-    Diff := (Dist - C^.RestLength) / Dist;
+    // Utiliser FastInvSqrt au lieu de Vec2Length
+    InvDist := FastInvSqrt(DistSq);
+    Dist := DistSq * InvDist;
+
+    Diff := (Dist - C^.RestLength) * InvDist;  // = (Dist - RestLength) / Dist
     Correction := Vec2Mul(Delta, Diff * 0.5 * C^.Stiffness);
 
     TotalInvMass := P1^.InvMass + P2^.InvMass;

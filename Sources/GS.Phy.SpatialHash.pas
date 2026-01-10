@@ -27,6 +27,11 @@ unit GS.Phy.SpatialHash;
 {$MODE DELPHI}
 {$ENDIF}
 
+// Optimisations de compilation
+{$O+}  // Optimisations activees
+{$R-}  // Range checking desactive
+{$Q-}  // Overflow checking desactive
+
 interface
 
 uses
@@ -68,6 +73,8 @@ implementation
 
 const
   INITIAL_CELL_CAPACITY = 16;
+  MAX_CELL_CAPACITY = 64;   // Capacite max par cellule (evite reallocations)
+  MAX_QUERY_RESULTS = 256;  // Capacite fixe pour eviter les allocations
 
 constructor TPhySpatialHash.Create;
 begin
@@ -75,6 +82,8 @@ begin
   FCellSize := 32;
   FInvCellSize := 1 / FCellSize;
   FCellCapacity := INITIAL_CELL_CAPACITY;
+  // Pre-allouer le buffer de resultats une seule fois
+  SetLength(FQueryResult, MAX_QUERY_RESULTS);
 end;
 
 destructor TPhySpatialHash.Destroy;
@@ -97,8 +106,8 @@ begin
 
   TotalCells := FGridWidth * FGridHeight;
 
-  // Allouer la grille
-  SetLength(FCells, TotalCells, FCellCapacity);
+  // Allouer la grille une seule fois avec capacite fixe
+  SetLength(FCells, TotalCells, MAX_CELL_CAPACITY);
   SetLength(FCellCounts, TotalCells);
 
   // Remplir a zero
@@ -144,12 +153,12 @@ begin
       CellIdx := CY * FGridWidth + CX;
       Count := FCellCounts[CellIdx];
 
-      // Agrandir si necessaire
-      if Count >= Length(FCells[CellIdx]) then
-        SetLength(FCells[CellIdx], Length(FCells[CellIdx]) * 2);
-
-      FCells[CellIdx][Count] := Ptr;  // Stocker le pointeur directement
-      Inc(FCellCounts[CellIdx]);
+      // Capacite fixe - ignorer si plein (rare avec bonne taille de cellule)
+      if Count < MAX_CELL_CAPACITY then
+      begin
+        FCells[CellIdx][Count] := Ptr;  // Stocker le pointeur directement
+        Inc(FCellCounts[CellIdx]);
+      end;
     end;
 end;
 
@@ -185,10 +194,12 @@ begin
         // Ne pas retourner soi-meme, et eviter les doublons (pointeur plus grand)
         if NativeUInt(Ptr) > NativeUInt(SelfPtr) then
         begin
-          if FQueryCount >= Length(FQueryResult) then
-            SetLength(FQueryResult, Length(FQueryResult) + 64);
-          FQueryResult[FQueryCount] := Ptr;
-          Inc(FQueryCount);
+          // Buffer pre-alloue - ignorer si plein (rare en pratique)
+          if FQueryCount < MAX_QUERY_RESULTS then
+          begin
+            FQueryResult[FQueryCount] := Ptr;
+            Inc(FQueryCount);
+          end;
         end;
       end;
     end;

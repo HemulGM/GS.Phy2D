@@ -27,6 +27,11 @@ unit GS.Phy.Vec2;
 {$MODE DELPHI}
 {$ENDIF}
 
+// Optimisations de compilation
+{$O+}  // Optimisations activees
+{$R-}  // Range checking desactive
+{$Q-}  // Overflow checking desactive
+
 interface
 
 type
@@ -43,8 +48,10 @@ function Vec2Dot(const A, B: TVec2): Single; inline;
 function Vec2LengthSq(const V: TVec2): Single; inline;
 function Vec2Length(const V: TVec2): Single; inline;
 function Vec2Normalize(const V: TVec2): TVec2; inline;
+function Vec2NormalizeFast(const V: TVec2): TVec2; inline;  // Version rapide
 function Vec2Dist(const A, B: TVec2): Single; inline;
 function Vec2DistSq(const A, B: TVec2): Single; inline;
+function FastInvSqrt(X: Single): Single; inline;  // Quake III algorithm
 
 implementation
 
@@ -112,6 +119,41 @@ end;
 function Vec2DistSq(const A, B: TVec2): Single;
 begin
   Result := Sqr(B.X - A.X) + Sqr(B.Y - A.Y);
+end;
+
+// Fast Inverse Square Root - Algorithme de Quake III (John Carmack)
+// Precision ~1% mais beaucoup plus rapide que 1/Sqrt(x)
+function FastInvSqrt(X: Single): Single;
+var
+  I: Integer;
+  X2, Y: Single;
+begin
+  X2 := X * 0.5;
+  Y := X;
+  I := PInteger(@Y)^;               // Reinterpreter float comme int
+  I := $5F3759DF - (I shr 1);       // Magic number (approximation initiale)
+  Y := PSingle(@I)^;                // Reinterpreter int comme float
+  Y := Y * (1.5 - (X2 * Y * Y));    // Une iteration de Newton-Raphson
+  Result := Y;
+end;
+
+// Normalisation rapide utilisant FastInvSqrt
+function Vec2NormalizeFast(const V: TVec2): TVec2;
+var
+  LenSq, InvLen: Single;
+begin
+  LenSq := V.X * V.X + V.Y * V.Y;
+  if LenSq > 0.0001 then
+  begin
+    InvLen := FastInvSqrt(LenSq);
+    Result.X := V.X * InvLen;
+    Result.Y := V.Y * InvLen;
+  end
+  else
+  begin
+    Result.X := 0;
+    Result.Y := 0;
+  end;
 end;
 
 end.

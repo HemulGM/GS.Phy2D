@@ -27,6 +27,11 @@ unit GS.Phy.Types;
 {$MODE DELPHI}
 {$ENDIF}
 
+// Optimisations de compilation
+{$O+}  // Optimisations activees
+{$R-}  // Range checking desactive
+{$Q-}  // Overflow checking desactive
+
 interface
 
 uses
