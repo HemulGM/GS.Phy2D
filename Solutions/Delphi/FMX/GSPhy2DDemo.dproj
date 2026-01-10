@@ -5,8 +5,8 @@
         <FrameworkType>FMX</FrameworkType>
         <MainSource>GSPhy2DDemo.dpr</MainSource>
         <Base>True</Base>
-        <Config Condition="'$(Config)'==''">Debug</Config>
-        <Platform Condition="'$(Platform)'==''">Win32</Platform>
+        <Config Condition="'$(Config)'==''">Release</Config>
+        <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Application</AppType>
         <ProjectName Condition="'$(ProjectName)'==''">GSPhy2DDemo</ProjectName>
@@ -269,7 +269,6 @@
         </DelphiCompile>
         <DCCReference Include="fmain.pas">
             <Form>FormGSPhy</Form>
-            <FormType>fmx</FormType>
         </DCCReference>
         <DCCReference Include="..\..\..\Sources\GS.Phy.Vec2.pas"/>
         <DCCReference Include="..\..\..\Sources\GS.Phy.Types.pas"/>

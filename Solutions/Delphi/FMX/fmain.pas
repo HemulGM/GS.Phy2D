@@ -57,8 +57,8 @@ implementation
 
 const
   WALL_THICKNESS = 20;
-  BALL_RADIUS_MIN = 5;
-  BALL_RADIUS_MAX = 15;
+  BALL_RADIUS_MIN = 3;
+  BALL_RADIUS_MAX = 6;
 
 procedure TFormGSPhy.FormCreate(Sender: TObject);
 begin
