@@ -50,7 +50,7 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    // Definir le canvas FMX cible
+    // Set target FMX canvas
     procedure SetCanvas(Canvas: TCanvas);
 
     property Canvas: TCanvas read FCanvas;

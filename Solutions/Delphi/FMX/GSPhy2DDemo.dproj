@@ -5,7 +5,7 @@
         <FrameworkType>FMX</FrameworkType>
         <MainSource>GSPhy2DDemo.dpr</MainSource>
         <Base>True</Base>
-        <Config Condition="'$(Config)'==''">Debug</Config>
+        <Config Condition="'$(Config)'==''">Release</Config>
         <Platform Condition="'$(Platform)'==''">Win32</Platform>
         <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Application</AppType>
@@ -277,6 +277,7 @@
         <DCCReference Include="..\..\..\Sources\GS.Phy.Renderer.FMX.pas"/>
         <DCCReference Include="..\..\..\Sources\GS.Phy.Renderer.pas"/>
         <DCCReference Include="..\..\..\Sources\GS.Phy.AABB.pas"/>
+        <DCCReference Include="..\..\..\Sources\GS.Phy.OBB.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

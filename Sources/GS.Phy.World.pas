@@ -29,10 +29,10 @@ unit GS.Phy.World;
 {$MODE DELPHI}
 {$ENDIF}
 
-// Optimisations de compilation
-{$O+}  // Optimisations activees
-{$R-}  // Range checking desactive
-{$Q-}  // Overflow checking desactive
+// Compiler optimizations
+{$O+}  // Optimizations enabled
+{$R-}  // Range checking disabled
+{$Q-}  // Overflow checking disabled
 
 interface
 
@@ -48,20 +48,20 @@ const
   // Object type tags for spatial hash (2 bits = 4 types max)
   TAG_PARTICLE = 0;
   TAG_AABB     = 1;
-  TAG_OBB      = 2;  // Reserved for future
+  TAG_RESERVED = 2;  // Reserved for future
   TAG_MESH     = 3;  // Reserved for future
   TAG_SHIFT    = 29;
   TAG_MASK     = $E0000000;  // Top 3 bits
   INDEX_MASK   = $1FFFFFFF;  // Bottom 29 bits
 
 type
-  // Spatial hash pour boxes statiques - array fixe de pointeurs par cellule
+  // Spatial hash for static boxes - fixed array of pointers per cell
   TBoxGridCell = record
     Boxes: array[0..BOX_GRID_MAX_PER_CELL-1] of PPhyBox;
     Count: Integer;
   end;
 
-  // Structure SoA pour les particules - acces cache-friendly
+  // SoA structure for particles - cache-friendly access
   TParticleSoA = record
     PosX: array of Single;
     PosY: array of Single;
@@ -106,7 +106,7 @@ type
     FConstraintIterations: Integer;
     FRestitution: Single;
 
-    // Spatial hash pour boxes statiques
+    // Spatial hash for static boxes
     FBoxGrid: array of TBoxGridCell;
     FBoxGridWidth, FBoxGridHeight: Integer;
     FBoxGridCellSize: Single;
@@ -403,7 +403,7 @@ begin
   for Iter := 0 to FCollisionIterations - 1 do
   begin
     SolveConstraints;
-    SolveCollisions;  // Unified: particle-particle, particle-AABB, AABB-AABB via spatial hash
+    SolveCollisions;  // Unified: all dynamic objects via spatial hash
     SolveBoxCollisions;
     SolveAABBBoxCollisions;
   end;
@@ -419,10 +419,10 @@ begin
   GravX := FGravity.X;
   GravY := FGravity.Y;
 
-  // Boucle optimisee SoA - acces sequentiel en memoire
+  // Optimized SoA loop - sequential memory access
   for I := 0 to FParticleCount - 1 do
   begin
-    // Sauter les particules fixes
+    // Skip fixed particles
     if (FParticles.Flags[I] and PHY_FLAG_FIXED) <> 0 then
       Continue;
 
@@ -430,7 +430,7 @@ begin
     VelX := (FParticles.PosX[I] - FParticles.OldPosX[I]) * FDamping;
     VelY := (FParticles.PosY[I] - FParticles.OldPosY[I]) * FDamping;
 
-    // Ajouter gravite a l'acceleration
+    // Add gravity to acceleration
     FParticles.AccelX[I] := FParticles.AccelX[I] + GravX;
     FParticles.AccelY[I] := FParticles.AccelY[I] + GravY;
 
@@ -521,7 +521,7 @@ begin
     begin
       HW := FAABBs.HalfW[I];
       HH := FAABBs.HalfH[I];
-      if HW > HH then Rad := HW else Rad := HH;  // Bounding radius = max extent
+      if HW > HH then Rad := HW else Rad := HH;
       FSpatialHash.Insert(Pointer(EncodeTag(TAG_AABB, I)),
         FAABBs.PosX[I], FAABBs.PosY[I], Rad);
     end;
@@ -552,7 +552,7 @@ begin
     end;
   end;
 
-  // Query from AABBs (only need to check AABB-AABB, particle-AABB already handled)
+  // Query from AABBs
   for I := 0 to FAABBCount - 1 do
   begin
     if (FAABBs.Flags[I] and PHY_FLAG_COLLIDABLE) = 0 then
@@ -572,7 +572,6 @@ begin
       Tag := NativeUInt(FSpatialHash.GetQueryResult(K));
       DecodeTag(Tag, ObjType, ObjIndex);
 
-      // Only AABB-AABB here (particle-AABB already done above)
       if ObjType = TAG_AABB then
         CollideAABBsSoA(I, ObjIndex);
     end;
@@ -624,25 +623,25 @@ begin
   CorrX := NormalX * Overlap;
   CorrY := NormalY * Overlap;
 
-  // Separer les particules
+  // Separate particles
   FParticles.PosX[I] := FParticles.PosX[I] - CorrX * Ratio1;
   FParticles.PosY[I] := FParticles.PosY[I] - CorrY * Ratio1;
   FParticles.PosX[J] := FParticles.PosX[J] + CorrX * Ratio2;
   FParticles.PosY[J] := FParticles.PosY[J] + CorrY * Ratio2;
 
-  // Velocites implicites Verlet
+  // Implicit Verlet velocities
   V1X := FParticles.PosX[I] - FParticles.OldPosX[I];
   V1Y := FParticles.PosY[I] - FParticles.OldPosY[I];
   V2X := FParticles.PosX[J] - FParticles.OldPosX[J];
   V2Y := FParticles.PosY[J] - FParticles.OldPosY[J];
 
-  // Velocite relative le long de la normale
+  // Relative velocity along normal
   RelVel := (V2X - V1X) * NormalX + (V2Y - V1Y) * NormalY;
 
   if RelVel > 0 then
     Exit;
 
-  // Impulsion avec restitution
+  // Impulse with restitution
   ImpulseScalar := -(1 + FRestitution) * RelVel / TotalInvMass;
   ImpX := NormalX * ImpulseScalar;
   ImpY := NormalY * ImpulseScalar;
@@ -975,12 +974,14 @@ var
   NX, NY: Single;
   EdgeDistLeft, EdgeDistRight, EdgeDistTop, EdgeDistBottom, MinEdgeDist: Single;
   InvDist: Single;
+  VelX, VelY, VelN, ImpulseScalar: Single;
+  NewPosX, NewPosY: Single;
 begin
   PosX := FParticles.PosX[I];
   PosY := FParticles.PosY[I];
   Rad := FParticles.Radius[I];
 
-  // Trouver le point le plus proche sur le rectangle
+  // Find closest point on rectangle
   if PosX < Box^.MinX then
     ClosestX := Box^.MinX
   else if PosX > Box^.MaxX then
@@ -1003,7 +1004,7 @@ begin
   begin
     if DistSq < 0.0001 then
     begin
-      // Cercle a l'interieur - pousser vers le bord le plus proche
+      // Circle inside - push to nearest edge
       EdgeDistLeft := PosX - Box^.MinX;
       EdgeDistRight := Box^.MaxX - PosX;
       EdgeDistTop := PosY - Box^.MinY;
@@ -1027,12 +1028,12 @@ begin
         NX := 0; NY := 1;
       end;
 
-      FParticles.PosX[I] := PosX + NX * (MinEdgeDist + Rad);
-      FParticles.PosY[I] := PosY + NY * (MinEdgeDist + Rad);
+      NewPosX := PosX + NX * (MinEdgeDist + Rad);
+      NewPosY := PosY + NY * (MinEdgeDist + Rad);
     end
     else
     begin
-      // Cas normal
+      // Normal case
       InvDist := FastInvSqrt(DistSq);
       Dist := DistSq * InvDist;
       Overlap := Rad - Dist;
@@ -1040,8 +1041,37 @@ begin
       NX := DX * InvDist;
       NY := DY * InvDist;
 
-      FParticles.PosX[I] := PosX + NX * Overlap;
-      FParticles.PosY[I] := PosY + NY * Overlap;
+      NewPosX := PosX + NX * Overlap;
+      NewPosY := PosY + NY * Overlap;
+    end;
+
+    // Calculate velocity BEFORE position correction (from original position)
+    VelX := PosX - FParticles.OldPosX[I];
+    VelY := PosY - FParticles.OldPosY[I];
+
+    // Apply position correction
+    FParticles.PosX[I] := NewPosX;
+    FParticles.PosY[I] := NewPosY;
+
+    // Velocity component along normal
+    VelN := VelX * NX + VelY * NY;
+
+    // Only reflect if moving into the box
+    if VelN < 0 then
+    begin
+      // Reflect velocity: remove normal component and add reflected component
+      // NewVel = Vel - (1 + Rest) * VelN * Normal
+      ImpulseScalar := (1 + FRestitution) * VelN;
+
+      // Update OldPos so that NewPos - NewOldPos = reflected velocity
+      FParticles.OldPosX[I] := NewPosX - (VelX - ImpulseScalar * NX);
+      FParticles.OldPosY[I] := NewPosY - (VelY - ImpulseScalar * NY);
+    end
+    else
+    begin
+      // Keep tangent velocity
+      FParticles.OldPosX[I] := NewPosX - VelX;
+      FParticles.OldPosY[I] := NewPosY - VelY;
     end;
   end;
 end;
@@ -1050,11 +1080,16 @@ procedure TPhyWorld.SolveBoxCollisions;
 var
   I, K: Integer;
   PosX, PosY, Rad: Single;
+  VelX, VelY: Single;
   CellX, CellY, CellIdx: Integer;
   Cell: ^TBoxGridCell;
+  BoundsRight, BoundsBottom: Single;
 begin
   if FBoxGridDirty then
     RebuildBoxGrid;
+
+  BoundsRight := FWorldWidth;
+  BoundsBottom := FWorldHeight;
 
   for I := 0 to FParticleCount - 1 do
   begin
@@ -1067,20 +1102,54 @@ begin
     PosY := FParticles.PosY[I];
     Rad := FParticles.Radius[I];
 
-    // Collision avec les bords du monde
+    // Collision with world bounds - only read OldPos when needed
+    // Left wall
     if PosX < Rad then
+    begin
+      VelX := PosX - FParticles.OldPosX[I];
       PosX := Rad;
-    if PosX > FWorldWidth - Rad then
-      PosX := FWorldWidth - Rad;
+      if VelX < 0 then
+        FParticles.OldPosX[I] := PosX + VelX * FRestitution
+      else
+        FParticles.OldPosX[I] := PosX - VelX;
+      FParticles.PosX[I] := PosX;
+    end
+    // Right wall
+    else if PosX > BoundsRight - Rad then
+    begin
+      VelX := PosX - FParticles.OldPosX[I];
+      PosX := BoundsRight - Rad;
+      if VelX > 0 then
+        FParticles.OldPosX[I] := PosX + VelX * FRestitution
+      else
+        FParticles.OldPosX[I] := PosX - VelX;
+      FParticles.PosX[I] := PosX;
+    end;
+
+    // Top wall
     if PosY < Rad then
+    begin
+      VelY := PosY - FParticles.OldPosY[I];
       PosY := Rad;
-    if PosY > FWorldHeight - Rad then
-      PosY := FWorldHeight - Rad;
+      if VelY < 0 then
+        FParticles.OldPosY[I] := PosY + VelY * FRestitution
+      else
+        FParticles.OldPosY[I] := PosY - VelY;
+      FParticles.PosY[I] := PosY;
+    end
+    // Bottom wall
+    else if PosY > BoundsBottom - Rad then
+    begin
+      VelY := PosY - FParticles.OldPosY[I];
+      PosY := BoundsBottom - Rad;
+      if VelY > 0 then
+        FParticles.OldPosY[I] := PosY + VelY * FRestitution
+      else
+        FParticles.OldPosY[I] := PosY - VelY;
+      FParticles.PosY[I] := PosY;
+    end;
 
-    FParticles.PosX[I] := PosX;
-    FParticles.PosY[I] := PosY;
-
-    // Collision avec les boxes
+    // Collision with static boxes
     if FBoxCount > 0 then
     begin
       CellX := Trunc(PosX * FBoxGridInvCellSize);
@@ -1104,11 +1173,16 @@ procedure TPhyWorld.SolveAABBBoxCollisions;
 var
   I, K: Integer;
   PosX, PosY, HW, HH: Single;
+  VelX, VelY: Single;
   CellX, CellY, CellIdx: Integer;
   Cell: ^TBoxGridCell;
+  BoundsRight, BoundsBottom: Single;
 begin
   if FBoxGridDirty then
     RebuildBoxGrid;
+
+  BoundsRight := FWorldWidth;
+  BoundsBottom := FWorldHeight;
 
   for I := 0 to FAABBCount - 1 do
   begin
@@ -1122,14 +1196,52 @@ begin
     HW := FAABBs.HalfW[I];
     HH := FAABBs.HalfH[I];
 
-    // World bounds collision
-    if PosX - HW < 0 then PosX := HW;
-    if PosX + HW > FWorldWidth then PosX := FWorldWidth - HW;
-    if PosY - HH < 0 then PosY := HH;
-    if PosY + HH > FWorldHeight then PosY := FWorldHeight - HH;
+    // World bounds collision - only read OldPos when needed
+    // Left wall
+    if PosX - HW < 0 then
+    begin
+      VelX := PosX - FAABBs.OldPosX[I];
+      PosX := HW;
+      if VelX < 0 then
+        FAABBs.OldPosX[I] := PosX + VelX * FRestitution
+      else
+        FAABBs.OldPosX[I] := PosX - VelX;
+      FAABBs.PosX[I] := PosX;
+    end
+    // Right wall
+    else if PosX + HW > BoundsRight then
+    begin
+      VelX := PosX - FAABBs.OldPosX[I];
+      PosX := BoundsRight - HW;
+      if VelX > 0 then
+        FAABBs.OldPosX[I] := PosX + VelX * FRestitution
+      else
+        FAABBs.OldPosX[I] := PosX - VelX;
+      FAABBs.PosX[I] := PosX;
+    end;
 
-    FAABBs.PosX[I] := PosX;
-    FAABBs.PosY[I] := PosY;
+    // Top wall
+    if PosY - HH < 0 then
+    begin
+      VelY := PosY - FAABBs.OldPosY[I];
+      PosY := HH;
+      if VelY < 0 then
+        FAABBs.OldPosY[I] := PosY + VelY * FRestitution
+      else
+        FAABBs.OldPosY[I] := PosY - VelY;
+      FAABBs.PosY[I] := PosY;
+    end
+    // Bottom wall
+    else if PosY + HH > BoundsBottom then
+    begin
+      VelY := PosY - FAABBs.OldPosY[I];
+      PosY := BoundsBottom - HH;
+      if VelY > 0 then
+        FAABBs.OldPosY[I] := PosY + VelY * FRestitution
+      else
+        FAABBs.OldPosY[I] := PosY - VelY;
+      FAABBs.PosY[I] := PosY;
+    end;
 
     // Static box collision
     if FBoxCount > 0 then
@@ -1156,6 +1268,9 @@ var
   MinX1, MaxX1, MinY1, MaxY1: Single;
   OverlapX, OverlapY, Overlap: Single;
   NX, NY: Single;
+  NewPosX, NewPosY: Single;
+  VelX, VelY, VelN: Single;
+  ImpulseScalar: Single;
 begin
   MinX1 := FAABBs.PosX[I] - FAABBs.HalfW[I];
   MaxX1 := FAABBs.PosX[I] + FAABBs.HalfW[I];
@@ -1196,8 +1311,35 @@ begin
     begin NX := 0; NY := 1; end;
   end;
 
-  FAABBs.PosX[I] := FAABBs.PosX[I] + NX * Overlap;
-  FAABBs.PosY[I] := FAABBs.PosY[I] + NY * Overlap;
+  // Calculate velocity BEFORE position correction (from original position)
+  VelX := FAABBs.PosX[I] - FAABBs.OldPosX[I];
+  VelY := FAABBs.PosY[I] - FAABBs.OldPosY[I];
+
+  // Apply position correction
+  NewPosX := FAABBs.PosX[I] + NX * Overlap;
+  NewPosY := FAABBs.PosY[I] + NY * Overlap;
+  FAABBs.PosX[I] := NewPosX;
+  FAABBs.PosY[I] := NewPosY;
+
+  // Velocity component along normal
+  VelN := VelX * NX + VelY * NY;
+
+  // Only reflect if moving into the box
+  if VelN < 0 then
+  begin
+    // Reflect velocity: remove normal component and add reflected component
+    ImpulseScalar := (1 + FRestitution) * VelN;
+
+    // Update OldPos so that NewPos - NewOldPos = reflected velocity
+    FAABBs.OldPosX[I] := NewPosX - (VelX - ImpulseScalar * NX);
+    FAABBs.OldPosY[I] := NewPosY - (VelY - ImpulseScalar * NY);
+  end
+  else
+  begin
+    // Keep tangent velocity
+    FAABBs.OldPosX[I] := NewPosX - VelX;
+    FAABBs.OldPosY[I] := NewPosY - VelY;
+  end;
 end;
 
 procedure TPhyWorld.Clear;
@@ -1210,7 +1352,7 @@ end;
 
 function TPhyWorld.GetParticle(Index: Integer): PPhyParticle;
 begin
-  // Reconstruit une structure temporaire pour compatibilite
+  // Rebuild temporary structure for compatibility
   FTempParticle.Pos.X := FParticles.PosX[Index];
   FTempParticle.Pos.Y := FParticles.PosY[Index];
   FTempParticle.OldPos.X := FParticles.OldPosX[Index];
@@ -1229,7 +1371,7 @@ begin
   Result := @FBoxes[Index];
 end;
 
-// Acces direct SoA - plus rapide pour le rendu
+// Direct SoA access - faster for rendering
 function TPhyWorld.GetPosX(Index: Integer): Single;
 begin
   Result := FParticles.PosX[Index];

@@ -4,7 +4,7 @@ interface
 
 uses
   System.SysUtils, System.Types, System.UITypes, System.Classes,
-  System.Diagnostics,
+  System.Diagnostics, System.Math,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.SpinBox,
   FMX.Controls.Presentation, FMX.StdCtrls, FMX.Layouts,
   GS.Phy.Vec2, GS.Phy.Types, GS.Phy.AABB, GS.Phy.World,
@@ -27,7 +27,9 @@ type
     LabelIterations: TLabel;
     SpinBoxIterations: TSpinBox;
     ButtonAddBoxes: TButton;
+    ButtonAddOBBs: TButton;
     LabelBallCount: TLabel;
+    Rectangle2: TRectangle;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
@@ -36,6 +38,7 @@ type
     procedure ButtonAddBallsClick(Sender: TObject);
     procedure ButtonAddBoxesClick(Sender: TObject);
     procedure ButtonAddAABBsClick(Sender: TObject);
+    procedure ButtonAddOBBsClick(Sender: TObject);
     procedure SpinBoxIterationsChange(Sender: TObject);
     procedure TrackBarDampingChange(Sender: TObject);
     procedure TrackBarRestitutionChange(Sender: TObject);
@@ -63,8 +66,8 @@ implementation
 
 const
   WALL_THICKNESS = 20;
-  BALL_RADIUS_MIN = 5;
-  BALL_RADIUS_MAX = 15;
+  BALL_RADIUS_MIN = 2;
+  BALL_RADIUS_MAX = 10;
 
 procedure TFormGSPhy.FormCreate(Sender: TObject);
 begin
@@ -207,6 +210,11 @@ end;
 procedure TFormGSPhy.ButtonAddAABBsClick(Sender: TObject);
 begin
   SpawnAABBs(50);
+end;
+
+procedure TFormGSPhy.ButtonAddOBBsClick(Sender: TObject);
+begin
+  // OBB support removed - TODO: implement proper rotation physics
 end;
 
 procedure TFormGSPhy.SpawnAABBs(Count: Integer);
