@@ -48,7 +48,6 @@ const
   // Object type tags for spatial hash (2 bits = 4 types max)
   TAG_PARTICLE = 0;
   TAG_AABB     = 1;
-  TAG_RESERVED = 2;  // Reserved for future
   TAG_MESH     = 3;  // Reserved for future
   TAG_SHIFT    = 29;
   TAG_MASK     = $E0000000;  // Top 3 bits
@@ -73,6 +72,7 @@ type
     InvMass: array of Single;
     Restitution: array of Single;
     Flags: array of Byte;
+    BodyID: array of Integer;  // -1 = free particle, >= 0 = belongs to rigid body
   end;
 
   TPhyWorld = class
@@ -97,6 +97,9 @@ type
     FConstraints: array of TPhyConstraint;
     FConstraintCount: Integer;
 
+    FRigidBodies: array of TPhyRigidBody;
+    FRigidBodyCount: Integer;
+
     FSpatialHash: TPhySpatialHash;
     FGravity: TVec2;
     FDamping: Single;
@@ -118,8 +121,6 @@ type
     procedure Integrate(DT: Single);
     procedure IntegrateAABBs(DT: Single);
     procedure SolveCollisions;
-    procedure SolveAABBCollisions;
-    procedure SolveParticleAABBCollisions;
     procedure SolveConstraints;
     procedure SolveBoxCollisions;
     procedure SolveAABBBoxCollisions;
@@ -143,6 +144,27 @@ type
     function AddBox(X, Y, Width, Height: Single; Restitution: Single = 0.3): Integer;
     function AddConstraint(P1, P2: Integer; Stiffness: Single = 1.0): Integer;
 
+    // Create a rigid rectangle using particles + constraints
+    // Subdivisions: 0 = 4 particles (corners), 1 = 8 particles, 2 = 12 particles, etc.
+    // Returns index of first particle
+    function AddRigidRect(X, Y, Width, Height: Single; ParticleRadius: Single = 3.0;
+      Mass: Single = 1.0; Restitution: Single = 0.5; Stiffness: Single = 1.0;
+      Subdivisions: Integer = 0): Integer;
+
+    // Create a rigid body from circles (compound collider)
+    // Circles: array of TCircleDef (relative X, Y, Radius)
+    // Returns rigid body index
+    function AddRigidBody(CenterX, CenterY: Single;
+      const Circles: array of TVec3;  // X, Y, Radius per circle (relative to center)
+      Mass: Single = 1.0; Restitution: Single = 0.5; Stiffness: Single = 1.0): Integer;
+
+    // Helper: create rectangle body from 2 main circles + filler circles
+    function AddRectBody(X, Y, Width, Height: Single;
+      Mass: Single = 1.0; Restitution: Single = 0.5): Integer;
+
+    function GetRigidBody(Index: Integer): PPhyRigidBody; inline;
+    property RigidBodyCount: Integer read FRigidBodyCount;
+
     procedure Step(DT: Single);
     procedure Clear;
 
@@ -164,6 +186,9 @@ type
     function GetAABBOldPosY(Index: Integer): Single; inline;
     function GetAABBHalfW(Index: Integer): Single; inline;
     function GetAABBHalfH(Index: Integer): Single; inline;
+
+    // Constraint access for rendering
+    function GetConstraint(Index: Integer): PPhyConstraint; inline;
 
     property ParticleCount: Integer read FParticleCount;
     property AABBCount: Integer read FAABBCount;
@@ -193,6 +218,7 @@ begin
   SetLength(FParticles.InvMass, FParticleCapacity);
   SetLength(FParticles.Restitution, FParticleCapacity);
   SetLength(FParticles.Flags, FParticleCapacity);
+  SetLength(FParticles.BodyID, FParticleCapacity);
 end;
 
 procedure TPhyWorld.GrowAABBArrays;
@@ -228,6 +254,7 @@ begin
   SetLength(FParticles.InvMass, FParticleCapacity);
   SetLength(FParticles.Restitution, FParticleCapacity);
   SetLength(FParticles.Flags, FParticleCapacity);
+  SetLength(FParticles.BodyID, FParticleCapacity);
 
   // Allocate AABB SoA arrays
   FAABBCount := 0;
@@ -249,6 +276,9 @@ begin
 
   FConstraintCount := 0;
   SetLength(FConstraints, 64);
+
+  FRigidBodyCount := 0;
+  SetLength(FRigidBodies, 16);
 
   FSpatialHash := TPhySpatialHash.Create;
   FGravity := Vec2(0, 500);
@@ -324,6 +354,7 @@ begin
   if Fixed then
     Flags := Flags or PHY_FLAG_FIXED;
   FParticles.Flags[FParticleCount] := Flags;
+  FParticles.BodyID[FParticleCount] := -1;  // Free particle by default
 
   Result := FParticleCount;
   Inc(FParticleCount);
@@ -391,6 +422,206 @@ begin
 
   Result := FConstraintCount;
   Inc(FConstraintCount);
+end;
+
+function TPhyWorld.AddRigidRect(X, Y, Width, Height: Single; ParticleRadius: Single = 3.0;
+      Mass: Single = 1.0; Restitution: Single = 0.5; Stiffness: Single = 1.0;
+      Subdivisions: Integer = 0): Integer;
+var
+  Particles: array of Integer;
+  ParticleCount, I, J, Next: Integer;
+  HW, HH: Single;
+  PartMass: Single;
+  PX, PY: Single;
+  PerSide: Integer;  // particles per side (including start corner, excluding end corner)
+  T: Single;
+begin
+  HW := Width / 2;
+  HH := Height / 2;
+
+  // PerSide = 1 + Subdivisions (corner + intermediate points)
+  PerSide := 1 + Subdivisions;
+  ParticleCount := 4 * PerSide;  // 4 sides
+
+  PartMass := Mass / ParticleCount;
+  SetLength(Particles, ParticleCount);
+
+  // Create particles around perimeter (clockwise from top-left)
+  // Side 0: Top (P0 to P1)
+  for I := 0 to PerSide - 1 do
+  begin
+    T := I / PerSide;
+    PX := X - HW + T * Width;
+    PY := Y - HH;
+    Particles[I] := AddParticle(PX, PY, ParticleRadius, False, PartMass, Restitution);
+  end;
+
+  // Side 1: Right (P1 to P2)
+  for I := 0 to PerSide - 1 do
+  begin
+    T := I / PerSide;
+    PX := X + HW;
+    PY := Y - HH + T * Height;
+    Particles[PerSide + I] := AddParticle(PX, PY, ParticleRadius, False, PartMass, Restitution);
+  end;
+
+  // Side 2: Bottom (P2 to P3)
+  for I := 0 to PerSide - 1 do
+  begin
+    T := I / PerSide;
+    PX := X + HW - T * Width;
+    PY := Y + HH;
+    Particles[2 * PerSide + I] := AddParticle(PX, PY, ParticleRadius, False, PartMass, Restitution);
+  end;
+
+  // Side 3: Left (P3 to P0)
+  for I := 0 to PerSide - 1 do
+  begin
+    T := I / PerSide;
+    PX := X - HW;
+    PY := Y + HH - T * Height;
+    Particles[3 * PerSide + I] := AddParticle(PX, PY, ParticleRadius, False, PartMass, Restitution);
+  end;
+
+  // Perimeter constraints (connect each particle to next)
+  for I := 0 to ParticleCount - 1 do
+  begin
+    Next := (I + 1) mod ParticleCount;
+    AddConstraint(Particles[I], Particles[Next], Stiffness);
+  end;
+
+  // Cross constraints for rigidity (connect each particle to opposite)
+  for I := 0 to ParticleCount div 2 - 1 do
+  begin
+    J := I + ParticleCount div 2;
+    AddConstraint(Particles[I], Particles[J], Stiffness);
+  end;
+
+  // Additional diagonal constraints (corners)
+  // Connect corner 0 to corner 2, corner 1 to corner 3
+  AddConstraint(Particles[0], Particles[2 * PerSide], Stiffness);
+  AddConstraint(Particles[PerSide], Particles[3 * PerSide], Stiffness);
+
+  Result := Particles[0];
+end;
+
+function TPhyWorld.AddRigidBody(CenterX, CenterY: Single;
+  const Circles: array of TVec3;
+  Mass: Single; Restitution: Single; Stiffness: Single): Integer;
+var
+  I, J: Integer;
+  CircleCount: Integer;
+  ParticleStart, ConstraintStart: Integer;
+  PartMass: Single;
+  Dist, TouchDist: Single;
+  DX, DY: Single;
+begin
+  CircleCount := Length(Circles);
+  if CircleCount = 0 then
+  begin
+    Result := -1;
+    Exit;
+  end;
+
+  // Grow rigid body array if needed
+  if FRigidBodyCount >= Length(FRigidBodies) then
+    SetLength(FRigidBodies, Length(FRigidBodies) * 2 + 8);
+
+  ParticleStart := FParticleCount;
+  ConstraintStart := FConstraintCount;
+  PartMass := Mass / CircleCount;
+
+  // Create particles for each circle
+  for I := 0 to CircleCount - 1 do
+  begin
+    AddParticle(
+      CenterX + Circles[I].X,
+      CenterY + Circles[I].Y,
+      Circles[I].Z,  // Radius
+      False,
+      PartMass,
+      Restitution
+    );
+    // Assign body ID to this particle
+    FParticles.BodyID[ParticleStart + I] := FRigidBodyCount;
+  end;
+
+  // Create constraints between circles that touch or overlap
+  for I := 0 to CircleCount - 2 do
+  begin
+    for J := I + 1 to CircleCount - 1 do
+    begin
+      DX := Circles[J].X - Circles[I].X;
+      DY := Circles[J].Y - Circles[I].Y;
+      Dist := Sqrt(DX * DX + DY * DY);
+      TouchDist := Circles[I].Z + Circles[J].Z;
+
+      // Connect if circles touch or overlap (with small margin)
+      if Dist <= TouchDist * 1.1 then
+      begin
+        AddConstraint(ParticleStart + I, ParticleStart + J, Stiffness);
+      end;
+    end;
+  end;
+
+  // Register rigid body
+  FRigidBodies[FRigidBodyCount].ParticleStart := ParticleStart;
+  FRigidBodies[FRigidBodyCount].ParticleCount := CircleCount;
+  FRigidBodies[FRigidBodyCount].ConstraintStart := ConstraintStart;
+  FRigidBodies[FRigidBodyCount].ConstraintCount := FConstraintCount - ConstraintStart;
+
+  Result := FRigidBodyCount;
+  Inc(FRigidBodyCount);
+end;
+
+function TPhyWorld.AddRectBody(X, Y, Width, Height: Single;
+  Mass: Single; Restitution: Single): Integer;
+var
+  Circles: array of TVec3;
+  HW, HH: Single;
+  MainRadius, FillerRadius: Single;
+begin
+  // Main circles at left and right (half the height as radius)
+  HW := Width / 2;
+  HH := Height / 2;
+  MainRadius := HH;  // Main circles cover the height
+
+  // If width > height, we need filler circles between main circles
+  if Width > Height then
+  begin
+    FillerRadius := HH * 0.5;  // Smaller filler circles
+
+    // Count circles: 2 main + fillers in between and on edges
+    SetLength(Circles, 6);
+
+    // Left main circle
+    Circles[0] := Vec3(-HW + MainRadius, 0, MainRadius);
+    // Right main circle
+    Circles[1] := Vec3(HW - MainRadius, 0, MainRadius);
+
+    // Filler circles in interstices (top and bottom middle)
+    Circles[2] := Vec3(0, -HH + FillerRadius, FillerRadius);  // Top center
+    Circles[3] := Vec3(0, HH - FillerRadius, FillerRadius);   // Bottom center
+
+    // Extra fillers for corners
+    Circles[4] := Vec3(-HW + FillerRadius, -HH + FillerRadius, FillerRadius);  // Top-left
+    Circles[5] := Vec3(HW - FillerRadius, -HH + FillerRadius, FillerRadius);   // Top-right
+  end
+  else
+  begin
+    // Simple case: just 2 circles stacked
+    MainRadius := HW;
+    SetLength(Circles, 2);
+    Circles[0] := Vec3(0, -HH + MainRadius, MainRadius);
+    Circles[1] := Vec3(0, HH - MainRadius, MainRadius);
+  end;
+
+  Result := AddRigidBody(X, Y, Circles, Mass, Restitution, 1.0);
+end;
+
+function TPhyWorld.GetRigidBody(Index: Integer): PPhyRigidBody;
+begin
+  Result := @FRigidBodies[Index];
 end;
 
 procedure TPhyWorld.Step(DT: Single);
@@ -572,8 +803,9 @@ begin
       Tag := NativeUInt(FSpatialHash.GetQueryResult(K));
       DecodeTag(Tag, ObjType, ObjIndex);
 
-      if ObjType = TAG_AABB then
-        CollideAABBsSoA(I, ObjIndex);
+      case ObjType of
+        TAG_AABB: CollideAABBsSoA(I, ObjIndex);
+      end;
     end;
   end;
 end;
@@ -589,7 +821,14 @@ var
   RelVel, ImpulseScalar: Single;
   ImpX, ImpY: Single;
   InvMass1, InvMass2: Single;
+  BodyI, BodyJ: Integer;
 begin
+  // Skip collision if both particles belong to the same rigid body
+  BodyI := FParticles.BodyID[I];
+  BodyJ := FParticles.BodyID[J];
+  if (BodyI >= 0) and (BodyI = BodyJ) then
+    Exit;
+
   DeltaX := FParticles.PosX[J] - FParticles.PosX[I];
   DeltaY := FParticles.PosY[J] - FParticles.PosY[I];
   DistSq := DeltaX * DeltaX + DeltaY * DeltaY;
@@ -629,6 +868,8 @@ begin
   FParticles.PosX[J] := FParticles.PosX[J] + CorrX * Ratio2;
   FParticles.PosY[J] := FParticles.PosY[J] + CorrY * Ratio2;
 
+  // === Apply impulse (bounce) ===
+
   // Implicit Verlet velocities
   V1X := FParticles.PosX[I] - FParticles.OldPosX[I];
   V1Y := FParticles.PosY[I] - FParticles.OldPosY[I];
@@ -651,24 +892,6 @@ begin
   FParticles.OldPosY[I] := FParticles.PosY[I] - (V1Y - ImpY * InvMass1);
   FParticles.OldPosX[J] := FParticles.PosX[J] - (V2X + ImpX * InvMass2);
   FParticles.OldPosY[J] := FParticles.PosY[J] - (V2Y + ImpY * InvMass2);
-end;
-
-// AABB vs AABB collision - simple O(n^2) for now, can optimize with spatial hash later
-procedure TPhyWorld.SolveAABBCollisions;
-var
-  I, J: Integer;
-begin
-  for I := 0 to FAABBCount - 2 do
-  begin
-    if (FAABBs.Flags[I] and PHY_FLAG_COLLIDABLE) = 0 then
-      Continue;
-    for J := I + 1 to FAABBCount - 1 do
-    begin
-      if (FAABBs.Flags[J] and PHY_FLAG_COLLIDABLE) = 0 then
-        Continue;
-      CollideAABBsSoA(I, J);
-    end;
-  end;
 end;
 
 procedure TPhyWorld.CollideAABBsSoA(I, J: Integer);
@@ -760,24 +983,6 @@ begin
   FAABBs.OldPosY[I] := FAABBs.PosY[I] - (V1Y + ImpY * InvMass1);
   FAABBs.OldPosX[J] := FAABBs.PosX[J] - (V2X - ImpX * InvMass2);
   FAABBs.OldPosY[J] := FAABBs.PosY[J] - (V2Y - ImpY * InvMass2);
-end;
-
-// Particle vs AABB collision
-procedure TPhyWorld.SolveParticleAABBCollisions;
-var
-  PI, AI: Integer;
-begin
-  for PI := 0 to FParticleCount - 1 do
-  begin
-    if (FParticles.Flags[PI] and PHY_FLAG_COLLIDABLE) = 0 then
-      Continue;
-    for AI := 0 to FAABBCount - 1 do
-    begin
-      if (FAABBs.Flags[AI] and PHY_FLAG_COLLIDABLE) = 0 then
-        Continue;
-      CollideParticleAABBSoA(PI, AI);
-    end;
-  end;
 end;
 
 procedure TPhyWorld.CollideParticleAABBSoA(PI, AI: Integer);
@@ -1348,6 +1553,7 @@ begin
   FAABBCount := 0;
   FBoxCount := 0;
   FConstraintCount := 0;
+  FRigidBodyCount := 0;
 end;
 
 function TPhyWorld.GetParticle(Index: Integer): PPhyParticle;
@@ -1441,6 +1647,11 @@ end;
 function TPhyWorld.GetAABBHalfH(Index: Integer): Single;
 begin
   Result := FAABBs.HalfH[Index];
+end;
+
+function TPhyWorld.GetConstraint(Index: Integer): PPhyConstraint;
+begin
+  Result := @FConstraints[Index];
 end;
 
 end.

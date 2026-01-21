@@ -69,6 +69,15 @@ type
   end;
   PPhyBox = ^TPhyBox;
 
+  // Rigid body: group of particles forming a single object
+  TPhyRigidBody = record
+    ParticleStart: Integer;  // First particle index
+    ParticleCount: Integer;  // Number of particles in this body
+    ConstraintStart: Integer; // First constraint index
+    ConstraintCount: Integer; // Number of constraints
+  end;
+  PPhyRigidBody = ^TPhyRigidBody;
+
 function CreateParticle(X, Y, Radius: Single; Fixed: Boolean = False; Mass: Single = 1.0; Restitution: Single = 0.5): TPhyParticle;
 function CreateBox(X, Y, Width, Height: Single; Restitution: Single = 0.3): TPhyBox;
 

@@ -40,7 +40,14 @@ type
   end;
   PVec2 = ^TVec2;
 
+  // Vec3 for circle definitions (X, Y, Radius)
+  TVec3 = record
+    X, Y, Z: Single;
+  end;
+  PVec3 = ^TVec3;
+
 function Vec2(X, Y: Single): TVec2; inline;
+function Vec3(X, Y, Z: Single): TVec3; inline;
 function Vec2Add(const A, B: TVec2): TVec2; inline;
 function Vec2Sub(const A, B: TVec2): TVec2; inline;
 function Vec2Mul(const V: TVec2; S: Single): TVec2; inline;
@@ -59,6 +66,13 @@ function Vec2(X, Y: Single): TVec2;
 begin
   Result.X := X;
   Result.Y := Y;
+end;
+
+function Vec3(X, Y, Z: Single): TVec3;
+begin
+  Result.X := X;
+  Result.Y := Y;
+  Result.Z := Z;
 end;
 
 function Vec2Add(const A, B: TVec2): TVec2;

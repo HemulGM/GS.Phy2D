@@ -187,7 +187,7 @@ begin
 
       // Update counters
       TotalDynamic := FWorld.ParticleCount + FWorld.AABBCount;
-      Label1.Text := Format('Particles: %d', [TotalDynamic]);
+      Label1.Text := Format('Dynamic: %d', [TotalDynamic]);
       LabelBallCount.Text := Format('Balls: %d / AABB: %d', [FWorld.ParticleCount, FWorld.AABBCount]);
     end;
 
@@ -213,8 +213,30 @@ begin
 end;
 
 procedure TFormGSPhy.ButtonAddOBBsClick(Sender: TObject);
+const
+  RECT_MIN_SIZE = 30;
+  RECT_MAX_SIZE = 60;
+var
+  I: Integer;
+  X, Y, W, H: Single;
+  SpawnLeft, SpawnRight, SpawnTop, SpawnBottom: Single;
 begin
-  // OBB support removed - TODO: implement proper rotation physics
+  // Spawn rigid bodies made of circles
+  SpawnLeft := RECT_MAX_SIZE + 20;
+  SpawnRight := ClientWidth - RECT_MAX_SIZE - 20;
+  SpawnTop := RECT_MAX_SIZE + 20;
+  SpawnBottom := ClientHeight / 3;
+
+  for I := 0 to 9 do  // 10 rigid bodies
+  begin
+    X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
+    Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
+    W := RECT_MIN_SIZE + Random * (RECT_MAX_SIZE - RECT_MIN_SIZE);
+    H := RECT_MIN_SIZE + Random * (RECT_MAX_SIZE - RECT_MIN_SIZE);
+
+    // Create rectangle body from circles
+    FWorld.AddRectBody(X, Y, W, H, 1.0, 0.3);
+  end;
 end;
 
 procedure TFormGSPhy.SpawnAABBs(Count: Integer);
@@ -284,11 +306,13 @@ procedure TFormGSPhy.RenderWorld;
 var
   I: Integer;
   Box: PPhyBox;
+  Constraint: PPhyConstraint;
   PosX, PosY, OldPosX, OldPosY, Radius: Single;
   HalfW, HalfH: Single;
   VelX, VelY: Single;
   ObjColor: TPhyColor;
   W, H: Single;
+  X1, Y1, X2, Y2: Single;
 begin
   W := FRenderer.Width;
   H := FRenderer.Height;
@@ -337,6 +361,17 @@ begin
     ObjColor := FRenderer.VelocityToColor(VelX, VelY);
 
     FRenderer.FillRect(PosX - HalfW, PosY - HalfH, PosX + HalfW, PosY + HalfH, ObjColor);
+  end;
+
+  // Constraints (rigid rectangles)
+  for I := 0 to FWorld.ConstraintCount - 1 do
+  begin
+    Constraint := FWorld.GetConstraint(I);
+    X1 := FWorld.GetPosX(Constraint^.P1);
+    Y1 := FWorld.GetPosY(Constraint^.P1);
+    X2 := FWorld.GetPosX(Constraint^.P2);
+    Y2 := FWorld.GetPosY(Constraint^.P2);
+    FRenderer.DrawLine(X1, Y1, X2, Y2, TPhyColors.Red, 2.0);
   end;
 end;
 

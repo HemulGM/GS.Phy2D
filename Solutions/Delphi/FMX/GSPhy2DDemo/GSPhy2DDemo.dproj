@@ -5,8 +5,8 @@
         <FrameworkType>FMX</FrameworkType>
         <MainSource>GSPhy2DDemo.dpr</MainSource>
         <Base>True</Base>
-        <Config Condition="'$(Config)'==''">Release</Config>
-        <Platform Condition="'$(Platform)'==''">Win32</Platform>
+        <Config Condition="'$(Config)'==''">Debug</Config>
+        <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Application</AppType>
         <ProjectName Condition="'$(ProjectName)'==''">GSPhy2DDemo</ProjectName>
@@ -270,14 +270,13 @@
         <DCCReference Include="fmain.pas">
             <Form>FormGSPhy</Form>
         </DCCReference>
-        <DCCReference Include="..\..\..\Sources\GS.Phy.Vec2.pas"/>
-        <DCCReference Include="..\..\..\Sources\GS.Phy.Types.pas"/>
-        <DCCReference Include="..\..\..\Sources\GS.Phy.SpatialHash.pas"/>
-        <DCCReference Include="..\..\..\Sources\GS.Phy.World.pas"/>
-        <DCCReference Include="..\..\..\Sources\GS.Phy.Renderer.FMX.pas"/>
-        <DCCReference Include="..\..\..\Sources\GS.Phy.Renderer.pas"/>
-        <DCCReference Include="..\..\..\Sources\GS.Phy.AABB.pas"/>
-        <DCCReference Include="..\..\..\Sources\GS.Phy.OBB.pas"/>
+        <DCCReference Include="..\..\..\..\Sources\GS.Phy.AABB.pas"/>
+        <DCCReference Include="..\..\..\..\Sources\GS.Phy.Renderer.FMX.pas"/>
+        <DCCReference Include="..\..\..\..\Sources\GS.Phy.Renderer.pas"/>
+        <DCCReference Include="..\..\..\..\Sources\GS.Phy.SpatialHash.pas"/>
+        <DCCReference Include="..\..\..\..\Sources\GS.Phy.Types.pas"/>
+        <DCCReference Include="..\..\..\..\Sources\GS.Phy.Vec2.pas"/>
+        <DCCReference Include="..\..\..\..\Sources\GS.Phy.World.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -333,6 +332,12 @@
                     </Platform>
                 </DeployFile>
                 <DeployFile LocalName="Win32\Debug\GSPhy2DDemo.exe" Configuration="Debug" Class="ProjectOutput">
+                    <Platform Name="Win32">
+                        <RemoteName>GSPhy2DDemo.exe</RemoteName>
+                        <Overwrite>true</Overwrite>
+                    </Platform>
+                </DeployFile>
+                <DeployFile LocalName="Win32\Release\GSPhy2DDemo.exe" Configuration="Release" Class="ProjectOutput">
                     <Platform Name="Win32">
                         <RemoteName>GSPhy2DDemo.exe</RemoteName>
                         <Overwrite>true</Overwrite>

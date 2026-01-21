@@ -78,14 +78,13 @@ object FormGSPhy: TFormGSPhy
     end
     object ButtonAddOBBs: TButton
       Anchors = [akLeft, akTop, akRight]
-      Enabled = False
       Position.X = 8.000000000000000000
       Position.Y = 195.000000000000000000
       Size.Width = 184.000000000000000000
       Size.Height = 32.000000000000000000
       Size.PlatformDefault = False
       TabOrder = 14
-      Text = 'Add 50 Rects OBB (TODO)'
+      Text = 'Add Rect OBB'
       TextSettings.Trimming = None
       OnClick = ButtonAddOBBsClick
     end
