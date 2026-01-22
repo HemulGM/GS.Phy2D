@@ -8,7 +8,8 @@ uses
   FMX.Graphics, FMX.Dialogs, FMX.SpinBox, FMX.Controls.Presentation,
   FMX.StdCtrls, FMX.Layouts, GS.Phy.Vec2, GS.Phy.Types, GS.Phy.AABB,
   GS.Phy.World, GS.Phy.Renderer, GS.Phy.Renderer.FMX, FMX.Edit, FMX.EditBox,
-  FMX.ActnList, FMX.Objects, System.Threading;
+  FMX.ActnList, FMX.Objects, System.Threading, FMX.Filter.Effects,
+  FMX.TabControl;
 
 type
   TFormGSPhy = class(TForm)
@@ -30,6 +31,19 @@ type
     LabelBallCount: TLabel;
     Rectangle2: TRectangle;
     ButtonClear: TButton;
+    StyleBookWinUI3: TStyleBook;
+    Panel1: TPanel;
+    TabControl1: TTabControl;
+    TabItemObjects: TTabItem;
+    TabItemPhysic: TTabItem;
+    PanelGravity: TPanel;
+    SelectionPointGravity: TSelectionPoint;
+    Layout1: TLayout;
+    LabelGravityPoint: TLabel;
+    SpinBoxGravity: TSpinBox;
+    LabelGravity: TLabel;
+    Label2: TLabel;
+    ButtonResetGravity: TButton;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormPaint(Sender: TObject; Canvas: TCanvas; const ARect: TRectF);
@@ -42,7 +56,10 @@ type
     procedure ButtonAddAABBsClick(Sender: TObject);
     procedure ButtonAddOBBsClick(Sender: TObject);
     procedure ButtonClearClick(Sender: TObject);
+    procedure ButtonResetGravityClick(Sender: TObject);
     procedure FormMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+    procedure SelectionPointGravityTrack(Sender: TObject; var X, Y: Single);
+    procedure SpinBoxGravityChange(Sender: TObject);
     procedure SpinBoxIterationsChange(Sender: TObject);
     procedure TrackBarDampingChange(Sender: TObject);
     procedure TrackBarRestitutionChange(Sender: TObject);
@@ -62,6 +79,7 @@ type
     procedure SpawnBoxes(Count: Integer);
     procedure SpawnAABBs(Count: Integer);
     procedure RenderWorld;
+    procedure UpdateGravity;
   end;
 
 var
@@ -93,16 +111,6 @@ begin
   FStopwatch := TStopwatch.StartNew;
   FFrameCount := 0;
   FLastFPSUpdate := 0;
-
-  FTask := TTask.Run(
-    procedure
-    begin
-      while TTask.CurrentTask.Status in [TTaskStatus.Running] do
-      begin
-        FWorld.Step(1.0 / 60.0);
-        Sleep(1);
-      end;
-    end);
 end;
 
 procedure TFormGSPhy.FormDestroy(Sender: TObject);
@@ -145,6 +153,18 @@ begin
   finally
     TMonitor.Exit(FWorld);
   end;
+
+  UpdateGravity;
+
+  FTask := TTask.Run(
+    procedure
+    begin
+      while TTask.CurrentTask.Status in [TTaskStatus.Running] do
+      begin
+        FWorld.Step(1.0 / 60.0);
+        Sleep(1);
+      end;
+    end);
 end;
 
 procedure TFormGSPhy.UpdateFrame;
@@ -339,6 +359,12 @@ begin
   end;
 end;
 
+procedure TFormGSPhy.ButtonResetGravityClick(Sender: TObject);
+begin
+  SelectionPointGravity.Position.Point := TPointF.Create(PanelGravity.Width / 2, PanelGravity.Height);
+  UpdateGravity;
+end;
+
 procedure TFormGSPhy.SpawnAABBs(Count: Integer);
 const
   AABB_MIN_SIZE = 10;
@@ -400,7 +426,7 @@ begin
   FRenderer.SetSize(ClientWidth, ClientHeight);
   FRenderer.BeginRender;
   try
-    FRenderer.Clear(TPhyColors.White);
+    //FRenderer.Clear(TAlphaColorRec.Null);
     RenderWorld;
   finally
     FRenderer.EndRender;
@@ -478,6 +504,26 @@ begin
     Y2 := FWorld.GetPosY(Constraint^.P2);
     FRenderer.DrawLine(X1, Y1, X2, Y2, TPhyColors.Red, 2.0);
   end;
+end;
+
+procedure TFormGSPhy.UpdateGravity;
+begin
+  var Pt := SelectionPointGravity.Position.Point;
+  Pt.X := (Pt.X - PanelGravity.Width / 2) / PanelGravity.Width * 2;
+  Pt.Y := (Pt.Y - PanelGravity.Height / 2) / PanelGravity.Height * 2;
+  LabelGravityPoint.Text := Format('%f:%f', [Pt.X, Pt.Y]);
+  LabelGravity.Text := Format('Gravity: %d', [Trunc(SpinBoxGravity.Value)]);
+  FWorld.SetGravity(Pt.X * SpinBoxGravity.Value, Pt.Y * SpinBoxGravity.Value);
+end;
+
+procedure TFormGSPhy.SelectionPointGravityTrack(Sender: TObject; var X, Y: Single);
+begin
+  UpdateGravity;
+end;
+
+procedure TFormGSPhy.SpinBoxGravityChange(Sender: TObject);
+begin
+  UpdateGravity;
 end;
 
 end.
