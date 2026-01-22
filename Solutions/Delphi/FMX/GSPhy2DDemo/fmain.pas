@@ -4,12 +4,11 @@ interface
 
 uses
   System.SysUtils, System.Types, System.UITypes, System.Classes,
-  System.Diagnostics, System.Math,
-  FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.SpinBox,
-  FMX.Controls.Presentation, FMX.StdCtrls, FMX.Layouts,
-  GS.Phy.Vec2, GS.Phy.Types, GS.Phy.AABB, GS.Phy.World,
-  GS.Phy.Renderer, GS.Phy.Renderer.FMX,
-  FMX.Edit, FMX.EditBox, FMX.ActnList, FMX.Objects;
+  System.Diagnostics, System.Math, FMX.Types, FMX.Controls, FMX.Forms,
+  FMX.Graphics, FMX.Dialogs, FMX.SpinBox, FMX.Controls.Presentation,
+  FMX.StdCtrls, FMX.Layouts, GS.Phy.Vec2, GS.Phy.Types, GS.Phy.AABB,
+  GS.Phy.World, GS.Phy.Renderer, GS.Phy.Renderer.FMX, FMX.Edit, FMX.EditBox,
+  FMX.ActnList, FMX.Objects, System.Threading;
 
 type
   TFormGSPhy = class(TForm)
@@ -49,6 +48,7 @@ type
     procedure TrackBarRestitutionChange(Sender: TObject);
   private
     FWorld: TPhyWorld;
+    FTask: ITask;
     FRenderer: TPhyRendererFMX;
     FFrameCreated: Boolean;
     FStopwatch: TStopwatch;
@@ -68,9 +68,6 @@ var
   FormGSPhy: TFormGSPhy;
 
 implementation
-
-uses
-  System.Threading;
 
 {$R *.fmx}
 
@@ -97,7 +94,7 @@ begin
   FFrameCount := 0;
   FLastFPSUpdate := 0;
 
-  TTask.Run(
+  FTask := TTask.Run(
     procedure
     begin
       while TTask.CurrentTask.Status in [TTaskStatus.Running] do
@@ -110,6 +107,12 @@ end;
 
 procedure TFormGSPhy.FormDestroy(Sender: TObject);
 begin
+  FTask.Cancel;
+  try
+    FTask.Wait;
+  except
+    on E: EOperationCancelled do {cancel success}
+  end;
   FRenderer.Free;
   FWorld.Free;
 end;
@@ -138,7 +141,7 @@ begin
     FFrameCreated := True;
 
     LabelBallCount.Text := 'Balls: 0';
-    FMouseBox := FWorld.AddBox(200, 200, 40, 40);
+    FMouseBox := FWorld.AddBox(-200, -200, 40, 40);
   finally
     TMonitor.Exit(FWorld);
   end;
@@ -169,13 +172,18 @@ begin
   SpawnTop := BALL_RADIUS_MAX + 10;
   SpawnBottom := ClientHeight / 3;
 
-  for I := 0 to Count - 1 do
-  begin
-    X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
-    Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
-    Radius := BALL_RADIUS_MIN + Random * (BALL_RADIUS_MAX - BALL_RADIUS_MIN);
+  TMonitor.Enter(FWorld);
+  try
+    for I := 0 to Count - 1 do
+    begin
+      X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
+      Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
+      Radius := BALL_RADIUS_MIN + Random * (BALL_RADIUS_MAX - BALL_RADIUS_MIN);
 
-    FWorld.AddParticle(X, Y, Radius, False, 1.0, 0.5);
+      FWorld.AddParticle(X, Y, Radius, False, 1.0, 0.5);
+    end;
+  finally
+    TMonitor.Exit(FWorld);
   end;
 end;
 
@@ -193,14 +201,19 @@ begin
   SpawnTop := ClientHeight / 3;
   SpawnBottom := ClientHeight - BOX_MAX_SIZE - 20;
 
-  for I := 0 to Count - 1 do
-  begin
-    X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
-    Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
-    BoxW := BOX_MIN_SIZE + Random * (BOX_MAX_SIZE - BOX_MIN_SIZE);
-    BoxH := BOX_MIN_SIZE + Random * (BOX_MAX_SIZE - BOX_MIN_SIZE);
+  TMonitor.Enter(FWorld);
+  try
+    for I := 0 to Count - 1 do
+    begin
+      X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
+      Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
+      BoxW := BOX_MIN_SIZE + Random * (BOX_MAX_SIZE - BOX_MIN_SIZE);
+      BoxH := BOX_MIN_SIZE + Random * (BOX_MAX_SIZE - BOX_MIN_SIZE);
 
-    FWorld.AddBox(X, Y, BoxW, BoxH);
+      FWorld.AddBox(X, Y, BoxW, BoxH);
+    end;
+  finally
+    TMonitor.Exit(FWorld);
   end;
 end;
 
@@ -299,21 +312,31 @@ begin
   SpawnTop := RECT_MAX_SIZE + 20;
   SpawnBottom := ClientHeight / 3;
 
-  for I := 0 to 9 do  // 10 rigid bodies
-  begin
-    X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
-    Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
-    W := RECT_MIN_SIZE + Random * (RECT_MAX_SIZE - RECT_MIN_SIZE);
-    H := RECT_MIN_SIZE + Random * (RECT_MAX_SIZE - RECT_MIN_SIZE);
+  TMonitor.Enter(FWorld);
+  try
+    for I := 0 to 9 do  // 10 rigid bodies
+    begin
+      X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
+      Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
+      W := RECT_MIN_SIZE + Random * (RECT_MAX_SIZE - RECT_MIN_SIZE);
+      H := RECT_MIN_SIZE + Random * (RECT_MAX_SIZE - RECT_MIN_SIZE);
 
-    // Create rectangle body from circles
-    FWorld.AddRectBody(X, Y, W, H, 1.0, 0.3);
+      // Create rectangle body from circles
+      FWorld.AddRectBody(X, Y, W, H, 1.0, 0.3);
+    end;
+  finally
+    TMonitor.Exit(FWorld);
   end;
 end;
 
 procedure TFormGSPhy.ButtonClearClick(Sender: TObject);
 begin
-  FWorld.Clear;
+  TMonitor.Enter(FWorld);
+  try
+    FWorld.Clear;
+  finally
+    TMonitor.Exit(FWorld);
+  end;
 end;
 
 procedure TFormGSPhy.SpawnAABBs(Count: Integer);
@@ -330,14 +353,19 @@ begin
   SpawnTop := AABB_MAX_SIZE + 10;
   SpawnBottom := ClientHeight / 3;
 
-  for I := 0 to Count - 1 do
-  begin
-    X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
-    Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
-    W := AABB_MIN_SIZE + Random * (AABB_MAX_SIZE - AABB_MIN_SIZE);
-    H := AABB_MIN_SIZE + Random * (AABB_MAX_SIZE - AABB_MIN_SIZE);
+  TMonitor.Enter(FWorld);
+  try
+    for I := 0 to Count - 1 do
+    begin
+      X := SpawnLeft + Random * (SpawnRight - SpawnLeft);
+      Y := SpawnTop + Random * (SpawnBottom - SpawnTop);
+      W := AABB_MIN_SIZE + Random * (AABB_MAX_SIZE - AABB_MIN_SIZE);
+      H := AABB_MIN_SIZE + Random * (AABB_MAX_SIZE - AABB_MIN_SIZE);
 
-    FWorld.AddAABB(X, Y, W, H, False, 1.0, 0.5);
+      FWorld.AddAABB(X, Y, W, H, False, 1.0, 0.5);
+    end;
+  finally
+    TMonitor.Exit(FWorld);
   end;
 end;
 
